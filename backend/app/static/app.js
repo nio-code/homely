@@ -8,8 +8,9 @@ const fmtSpecs = (l) => {
   return parts.join(" · ");
 };
 
-let allListings = [];
+let activeTab = "approved";
 let filters = {};
+let searchPollHandle = null;
 
 async function api(path, opts = {}) {
   const r = await fetch(path, { headers: { "content-type": "application/json" }, ...opts });
@@ -24,9 +25,16 @@ function toast(msg, kind = "") {
   setTimeout(() => t.classList.remove("show"), 3500);
 }
 
+function escapeHtml(s) {
+  if (s == null) return "";
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+
 function card(l) {
   const el = document.createElement("div");
-  el.className = "card" + (l.pinned_at ? " pinned" : "");
+  el.className = "card" + (l.pinned_at ? " pinned" : "") + (l.status === "pending" ? " pending" : "");
   el.dataset.id = l.id;
 
   const agent = [];
@@ -38,26 +46,29 @@ function card(l) {
   if (l.agent_email) agent.push(`<div>✉️ <a href="mailto:${escapeHtml(l.agent_email)}">${escapeHtml(l.agent_email)}</a></div>`);
   if (!agent.length) agent.push(`<div class="muted">No agent info</div>`);
 
+  const actions = l.status === "pending"
+    ? `<div class="actions">
+         <button class="approve">✓ Approve</button>
+         <button class="reject ghost">✕ Reject</button>
+       </div>`
+    : `<button class="pin ${l.pinned_at ? "pinned" : ""}">${l.pinned_at ? "📌 Pinned" : "Pin"}</button>`;
+
   el.innerHTML = `
     <span class="source-tag">${escapeHtml(l.source.replace("_", " "))}</span>
     <div class="price">${fmtPrice(l.price)}</div>
     <div class="addr">${escapeHtml(l.address)}, ${escapeHtml(l.city)} ${escapeHtml(l.state)} ${escapeHtml(l.zip)}</div>
     <div class="specs">${fmtSpecs(l) || "—"}</div>
     <div class="agent">${agent.join("")}</div>
-    <button class="pin ${l.pinned_at ? "pinned" : ""}" data-action="${l.pinned_at ? "unpin" : "pin"}">
-      ${l.pinned_at ? "📌 Pinned" : "Pin"}
-    </button>
-    <a class="muted small" style="margin-top:8px;" href="${escapeHtml(l.listing_url)}" target="_blank" rel="noopener">View listing →</a>
+    ${actions}
+    <a class="muted small" style="margin-top:8px;" href="${escapeHtml(l.listing_url || "#")}" target="_blank" rel="noopener">View listing →</a>
   `;
-  el.querySelector("button.pin").addEventListener("click", () => togglePin(l));
+  const pinBtn = el.querySelector("button.pin");
+  if (pinBtn) pinBtn.addEventListener("click", () => togglePin(l));
+  const approveBtn = el.querySelector("button.approve");
+  if (approveBtn) approveBtn.addEventListener("click", () => approve(l));
+  const rejectBtn = el.querySelector("button.reject");
+  if (rejectBtn) rejectBtn.addEventListener("click", () => reject(l));
   return el;
-}
-
-function escapeHtml(s) {
-  if (s == null) return "";
-  return String(s).replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  }[c]));
 }
 
 async function togglePin(l) {
@@ -65,7 +76,7 @@ async function togglePin(l) {
   try {
     if (action === "pin") {
       const res = await api(`/api/listings/${l.id}/pin`, { method: "POST" });
-      toast(res.telegram_sent ? "📌 Pinned & sent to Telegram" : "Pinned (Telegram not linked — /start the bot)", res.telegram_sent ? "success" : "error");
+      toast(res.telegram_sent ? "📌 Pinned & sent to Telegram" : "Pinned (Telegram not linked — /start the bot)", res.telegram_sent ? "success" : "");
     } else {
       await api(`/api/listings/${l.id}/pin`, { method: "DELETE" });
       toast("Unpinned");
@@ -76,8 +87,30 @@ async function togglePin(l) {
   }
 }
 
-function buildQuery(f) {
+async function approve(l) {
+  try {
+    await api(`/api/listings/${l.id}/approve`, { method: "POST" });
+    toast(`✓ Approved ${l.address}`, "success");
+    await refresh();
+  } catch (e) {
+    toast("Approve failed: " + e.message, "error");
+  }
+}
+
+async function reject(l) {
+  if (!confirm(`Reject (delete) ${l.address}?`)) return;
+  try {
+    await api(`/api/listings/${l.id}`, { method: "DELETE" });
+    toast(`Rejected ${l.address}`);
+    await refresh();
+  } catch (e) {
+    toast("Reject failed: " + e.message, "error");
+  }
+}
+
+function buildQuery(f, status) {
   const q = new URLSearchParams();
+  if (status) q.set("status", status);
   if (f.zip) q.set("zip", f.zip);
   if (f.min_price) q.set("min_price", f.min_price);
   if (f.max_price) q.set("max_price", f.max_price);
@@ -86,10 +119,14 @@ function buildQuery(f) {
 }
 
 async function refresh() {
-  const [pinned, all] = await Promise.all([
-    api("/api/listings?pinned=true"),
-    api("/api/listings?" + buildQuery(filters)),
+  const [approved, pending, pinned] = await Promise.all([
+    api("/api/listings?" + buildQuery(filters, "approved")),
+    api("/api/listings?" + buildQuery(filters, "pending")),
+    api("/api/listings?" + buildQuery({}, "approved") + "&pinned=true"),
   ]);
+
+  $("#tab-count-approved").textContent = `(${approved.length})`;
+  $("#tab-count-pending").textContent = `(${pending.length})`;
 
   const tray = $("#tray");
   tray.innerHTML = "";
@@ -102,14 +139,12 @@ async function refresh() {
 
   const list = $("#list");
   list.innerHTML = "";
-  if (!all.length) {
-    list.innerHTML = `<div class="empty">No listings match your filters.</div>`;
+  const rows = activeTab === "approved" ? approved : pending;
+  if (!rows.length) {
+    list.innerHTML = `<div class="empty">${activeTab === "pending" ? "No listings awaiting review." : "No listings match your filters."}</div>`;
   } else {
-    all.forEach((l) => list.appendChild(card(l)));
+    rows.forEach((l) => list.appendChild(card(l)));
   }
-  $("#all-count").textContent = `(${all.length})`;
-
-  allListings = all;
 }
 
 function applyFilters() {
@@ -139,9 +174,69 @@ async function checkHealth() {
   }
 }
 
+// ── Search agent ─────────────────────────────────────────────────────────
+
+async function startSearch() {
+  $("#search-panel").classList.remove("hidden");
+  $("#search-state").textContent = "Starting…";
+  $("#search-log").textContent = "";
+  $("#search-btn").disabled = true;
+
+  try {
+    await api("/api/search/run", {
+      method: "POST",
+      body: JSON.stringify({ target: 25 }),
+    });
+    pollSearch();
+  } catch (e) {
+    $("#search-state").textContent = "Failed to start";
+    toast("Search failed to start: " + e.message, "error");
+    $("#search-btn").disabled = false;
+  }
+}
+
+async function pollSearch() {
+  if (searchPollHandle) clearTimeout(searchPollHandle);
+  try {
+    const s = await api("/api/search/status");
+    $("#search-state").textContent = s.running ? "🔍 Running…" : (s.returncode === 0 ? "✓ Done" : "⚠ Stopped");
+    $("#search-counts").textContent = `qualified=${s.qualified}  inserted=${s.inserted}  updated=${s.updated}`;
+    $("#search-log").textContent = s.log_tail.slice(-30).join("\n");
+    if (s.running) {
+      searchPollHandle = setTimeout(pollSearch, 1500);
+    } else {
+      $("#search-btn").disabled = false;
+      await refresh();
+      if (s.returncode === 0) {
+        toast(`Search complete — ${s.inserted} new in pending tab`, "success");
+        // auto-switch to pending tab if anything new
+        if (s.inserted > 0) switchTab("pending");
+      }
+    }
+  } catch (e) {
+    $("#search-state").textContent = "Status error";
+    $("#search-btn").disabled = false;
+  }
+}
+
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+  refresh();
+}
+
+// ── Wire events ──────────────────────────────────────────────────────────
+
 $("#f-apply").addEventListener("click", applyFilters);
 $("#f-clear").addEventListener("click", clearFilters);
 $("#f-zip").addEventListener("keydown", (e) => e.key === "Enter" && applyFilters());
+$("#search-btn").addEventListener("click", startSearch);
+$("#search-close").addEventListener("click", () => $("#search-panel").classList.add("hidden"));
+document.querySelectorAll(".tab").forEach((b) => {
+  b.addEventListener("click", () => switchTab(b.dataset.tab));
+});
 
 checkHealth();
 refresh();
+// resume polling if a search was running before page reload
+api("/api/search/status").then((s) => { if (s.running) { $("#search-panel").classList.remove("hidden"); pollSearch(); } }).catch(() => {});

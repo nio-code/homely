@@ -135,6 +135,65 @@ button.pin.pinned:hover::after { content: " — unpin"; }
 
 .empty { color: var(--muted); padding: 16px; text-align: center; }
 
+.header-right { display: flex; gap: 12px; align-items: center; }
+button.primary { background: var(--accent-2); color: #fff; }
+button.small { padding: 4px 10px; font-size: 12px; }
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+.tab {
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 10px 16px;
+  font-weight: 500;
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--text); border-bottom-color: var(--accent); }
+
+.search-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 16px;
+}
+.search-panel.hidden { display: none; }
+.search-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.search-head strong { font-size: 14px; }
+.search-head .ghost { margin-left: auto; }
+.search-panel pre {
+  background: #0a0e13;
+  color: #cfd5e0;
+  padding: 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  margin: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.card.pending { border-color: rgba(74, 142, 255, 0.6); border-style: dashed; }
+.card .actions { display: flex; gap: 8px; margin-top: 12px; }
+.card .actions button { flex: 1; }
+.card .actions .approve { background: var(--good); color: #fff; }
+
 .toast {
   position: fixed;
   bottom: 24px;

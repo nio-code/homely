@@ -174,6 +174,7 @@ def ingest_listings(
                     agent_phone=item.agent_phone,
                     agent_email=item.agent_email,
                     notes=notes,
+                    status="pending",
                 )
                 session.add(listing)
                 inserted += 1
