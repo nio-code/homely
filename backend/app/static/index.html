@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Homely</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>🏠 Homely</h1>
+    <span id="status" class="status"></span>
+  </header>
+
+  <section class="tray">
+    <div class="tray-head">
+      <h2>📌 Top picks <span id="tray-count" class="muted">(0)</span></h2>
+      <p class="muted small">Pinned listings — top 5 most-recent are notified to Telegram.</p>
+    </div>
+    <div id="tray" class="grid"></div>
+  </section>
+
+  <section class="filters">
+    <input id="f-zip" type="text" placeholder="ZIP" inputmode="numeric" maxlength="5" />
+    <input id="f-min" type="number" placeholder="Min $" min="0" step="50000" />
+    <input id="f-max" type="number" placeholder="Max $" min="0" step="50000" />
+    <input id="f-beds" type="number" placeholder="Min beds" min="0" step="0.5" />
+    <button id="f-apply">Apply</button>
+    <button id="f-clear" class="ghost">Clear</button>
+  </section>
+
+  <section>
+    <div class="row">
+      <h2>All listings <span id="all-count" class="muted">(0)</span></h2>
+    </div>
+    <div id="list" class="grid"></div>
+  </section>
+
+  <div id="toast" class="toast"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

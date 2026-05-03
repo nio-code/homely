@@ -1,0 +1,16 @@
+[project]
+name = "homely-backend"
+version = "0.1.0"
+requires-python = ">=3.9"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sqlmodel>=0.0.22",
+    "httpx>=0.27",
+    "python-dotenv>=1.0",
+    "pydantic>=2.7",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
