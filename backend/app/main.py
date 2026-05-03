@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .api import listings as listings_api
 from .api import pins as pins_api
+from .api import ingest as ingest_api
 from .db import init_db
 from .telegram.poller import run_poller
 
@@ -43,6 +44,7 @@ app.add_middleware(
 
 app.include_router(listings_api.router)
 app.include_router(pins_api.router)
+app.include_router(ingest_api.router)
 
 
 @app.get("/api/health")

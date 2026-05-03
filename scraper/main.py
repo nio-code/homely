@@ -4,13 +4,14 @@ Homely scraper — 10 asyncio workers, 10 sources, target 500 qualified listings
 Usage:
     python -m scraper.main
     python -m scraper.main --target 500 --workers 10 --zips 92618,92612
+    python -m scraper.main --api http://localhost:8000/api/listings/ingest
 """
 import argparse
 import asyncio
 import logging
 import time
 from pathlib import Path
-from typing import List, Tuple, Type
+from typing import List, Optional, Tuple, Type
 
 import httpx
 
@@ -24,6 +25,7 @@ from .config import (
 )
 from .models import Listing, RawEvent
 from .scorer import passes_filters, score
+from .sink import DEFAULT_API_URL, post_to_api
 from .sources import ALL_SCRAPERS
 from .sources.base import BaseScraper
 from .storage import QualifiedWriter, RawStore
@@ -150,7 +152,7 @@ async def result_processor(
 # Main entry point
 # ---------------------------------------------------------------------------
 
-async def run(target: int, workers: int, zips: List[str]) -> None:
+async def run(target: int, workers: int, zips: List[str], api_url: Optional[str] = None) -> None:
     raw_store = RawStore(DB_PATH)
     qualified_writer = QualifiedWriter(OUT_DIR)
     stop_event = asyncio.Event()
@@ -198,6 +200,17 @@ async def run(target: int, workers: int, zips: List[str]) -> None:
 
     qualified_writer.flush_summary(total_jobs, total_raw)
 
+    # POST to backend API
+    if api_url:
+        log.info("POSTing %d listings to %s ...", qualified_count, api_url)
+        ingest_result = post_to_api(qualified_writer._listings, api_url=api_url)
+        log.info(
+            "Ingest complete — inserted=%d  updated=%d  skipped=%d",
+            ingest_result.get("inserted", 0),
+            ingest_result.get("updated", 0),
+            ingest_result.get("skipped", 0),
+        )
+
     log.info("=" * 60)
     log.info("Done in %.1fs", elapsed)
     log.info("Raw events stored : %d", total_raw)
@@ -234,13 +247,16 @@ def main() -> None:
                         help=f"Asyncio worker count (default: {CONCURRENCY})")
     parser.add_argument("--zips", type=str, default=",".join(TARGET_ZIPS),
                         help="Comma-separated ZIP codes to search")
+    parser.add_argument("--api", type=str, default=DEFAULT_API_URL,
+                        help=f"Backend ingest URL (default: {DEFAULT_API_URL}). Pass 'none' to skip.")
     args = parser.parse_args()
 
     zips = [z.strip() for z in args.zips.split(",") if z.strip()]
-    log.info("Starting Homely scraper — target=%d, workers=%d, zips=%s",
-             args.target, args.workers, zips)
+    api_url = None if args.api.lower() == "none" else args.api
+    log.info("Starting Homely scraper — target=%d, workers=%d, zips=%s, api=%s",
+             args.target, args.workers, zips, api_url or "disabled")
 
-    asyncio.run(run(args.target, args.workers, zips))
+    asyncio.run(run(args.target, args.workers, zips, api_url))
 
 
 if __name__ == "__main__":
