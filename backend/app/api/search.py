@@ -74,10 +74,11 @@ async def _drain(stream: asyncio.StreamReader) -> None:
 
 
 async def _run_scraper(target: int, zips: Optional[str], api_key: str) -> None:
+    python = os.getenv("PYTHON_BIN", "python")
     cmd = [
-        "python", "-m", "scraper.main",
+        python, "-m", "scraper.main",
         "--target", str(target),
-        "--api", "http://localhost:8000/api/listings/ingest",
+        "--api", os.getenv("INGEST_URL", "http://localhost:8000/api/listings/ingest"),
     ]
     if zips:
         cmd += ["--zips", zips]
