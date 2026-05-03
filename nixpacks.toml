@@ -3,10 +3,10 @@ nixPkgs = ["python311", "gcc"]
 
 [phases.install]
 cmds = [
-  "python3.11 -m ensurepip --upgrade",
-  "python3.11 -m pip install -r backend/requirements.txt",
-  "python3.11 -m pip install httpx beautifulsoup4 lxml pydantic"
+  "python3.11 -m venv /venv",
+  "/venv/bin/pip install -r backend/requirements.txt",
+  "/venv/bin/pip install httpx beautifulsoup4 lxml pydantic"
 ]
 
 [start]
-cmd = "cd backend && python3.11 -m uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+cmd = "cd backend && /venv/bin/uvicorn app.main:app --host 0.0.0.0 --port $PORT"
