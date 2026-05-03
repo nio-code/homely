@@ -1,0 +1,16 @@
+.env
+*.db
+*.db-journal
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+*.egg-info/
+state.json
+
+node_modules/
+dist/
+.vite/
+
+.DS_Store
+.context/
