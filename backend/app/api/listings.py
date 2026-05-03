@@ -11,6 +11,7 @@ router = APIRouter(prefix="/api/listings", tags=["listings"])
 @router.get("")
 def list_listings(
     pinned: Optional[bool] = None,
+    status: Optional[str] = Query("approved", description="approved | pending | all"),
     min_price: Optional[int] = None,
     max_price: Optional[int] = None,
     beds: Optional[float] = None,
@@ -18,6 +19,8 @@ def list_listings(
     session: Session = Depends(get_session),
 ) -> list[Listing]:
     stmt = select(Listing)
+    if status and status != "all":
+        stmt = stmt.where(Listing.status == status)
     if pinned is True:
         stmt = stmt.where(Listing.pinned_at.is_not(None))
     elif pinned is False:

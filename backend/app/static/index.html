@@ -10,8 +10,20 @@
 <body>
   <header>
     <h1>🏠 Homely</h1>
-    <span id="status" class="status"></span>
+    <div class="header-right">
+      <button id="search-btn" class="primary">🔎 Find more listings</button>
+      <span id="status" class="status"></span>
+    </div>
   </header>
+
+  <div id="search-panel" class="search-panel hidden">
+    <div class="search-head">
+      <strong id="search-state">Idle</strong>
+      <span id="search-counts" class="muted small"></span>
+      <button id="search-close" class="ghost small">✕</button>
+    </div>
+    <pre id="search-log"></pre>
+  </div>
 
   <section class="tray">
     <div class="tray-head">
@@ -20,6 +32,11 @@
     </div>
     <div id="tray" class="grid"></div>
   </section>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="approved">Approved <span id="tab-count-approved" class="muted">(0)</span></button>
+    <button class="tab" data-tab="pending">Pending review <span id="tab-count-pending" class="muted">(0)</span></button>
+  </nav>
 
   <section class="filters">
     <input id="f-zip" type="text" placeholder="ZIP" inputmode="numeric" maxlength="5" />
@@ -31,9 +48,6 @@
   </section>
 
   <section>
-    <div class="row">
-      <h2>All listings <span id="all-count" class="muted">(0)</span></h2>
-    </div>
     <div id="list" class="grid"></div>
   </section>
 

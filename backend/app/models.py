@@ -28,5 +28,6 @@ class Listing(SQLModel, table=True):
     agent_phone: Optional[str] = None
     agent_email: Optional[str] = None
     notes: Optional[str] = None
+    status: str = Field(default="approved", index=True)  # "pending" | "approved"
     pinned_at: Optional[datetime] = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=utcnow)
