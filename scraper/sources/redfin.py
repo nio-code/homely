@@ -1,28 +1,24 @@
 """
 Redfin scraper using the unofficial stingray GIS API.
-Step 1: resolve ZIP → region_id via autocomplete endpoint.
-Step 2: hit GIS search API with region_id + filters.
-Note: Redfin has Cloudflare protection; works ~60% of the time without proxies.
+Region IDs confirmed by probing the Redfin API for SoCal neighborhoods.
 """
 import json
 import re
 from typing import Dict, List, Optional
 
-import httpx
-
 from ..models import Listing
 from .base import BaseScraper
 
-# Pre-resolved region_ids for target ZIPs (avoids an extra round-trip per run)
-_KNOWN_REGION_IDS: Dict[str, str] = {
-    "92602": "26085",
-    "92603": "26086",
-    "92606": "26091",
-    "92612": "26093",
-    "92614": "26095",
-    "92618": "26098",
-    "92620": "26100",
-    "92697": "26093",  # UCI campus — falls back to 92612
+# Confirmed region_id → ZIP mapping (region_type=2, market=socal)
+REGION_IDS: Dict[str, int] = {
+    "92602": 38398,
+    "92603": 38399,
+    "92606": 38402,
+    "92612": 38406,
+    "92614": 38407,
+    "92618": 38411,
+    "92620": 38413,
+    "92697": 38406,  # UCI campus — use 92612 proxy
 }
 
 
@@ -31,14 +27,14 @@ class RedfinScraper(BaseScraper):
     page_size = 50
 
     def search_url(self, zip_code: str, page: int) -> str:
-        region_id = _KNOWN_REGION_IDS.get(zip_code, "26093")
+        region_id = REGION_IDS.get(zip_code, 38411)
         start = (page - 1) * self.page_size
         return (
             "https://www.redfin.com/stingray/api/gis?"
             f"al=1&market=socal"
             f"&region_id={region_id}&region_type=2"
             f"&status=1"
-            f"&uipt=1"          # 1 = house / SFR
+            f"&uipt=1"
             f"&beds_min=3&baths_min=2&sqft_min=1000"
             f"&num_homes={self.page_size}"
             f"&start={start}"
@@ -47,7 +43,6 @@ class RedfinScraper(BaseScraper):
         )
 
     async def fetch(self, url: str, headers: Optional[dict] = None) -> tuple:
-        # Redfin requires these specific headers to avoid 403
         hdrs = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             "Accept": "*/*",
@@ -64,17 +59,16 @@ class RedfinScraper(BaseScraper):
             return 0, str(exc)
 
     def parse_search_page(self, body: str, zip_code: str) -> List[Listing]:
-        # Redfin prepends "{}&&" to JSON responses as XSSI protection
-        clean = body.lstrip("{}&")
+        # Strip Redfin XSSI prefix — everything before first '{"version"'
+        m = re.search(r'\{"version"', body)
+        if not m:
+            return []
         try:
-            data = json.loads(clean)
+            data = json.loads(body[m.start():])
         except Exception:
             return []
 
-        homes = (
-            data.get("payload", {}).get("homes", [])
-            or data.get("payload", {}).get("homeData", {}).get("homesByRegion", [])
-        )
+        homes = data.get("payload", {}).get("homes", [])
         listings = []
         for h in homes:
             l = self._from_home(h, zip_code)
@@ -85,32 +79,46 @@ class RedfinScraper(BaseScraper):
     def _from_home(self, h: dict, zip_code: str) -> Optional[Listing]:
         try:
             l = Listing()
-            info = h.get("homeData", h)
-            addr = info.get("addressInfo", {})
 
-            l.address = addr.get("formattedStreetLine", info.get("address", ""))
-            l.city = addr.get("city", "Irvine")
-            l.state = addr.get("state", "CA")
-            l.zip_code = str(addr.get("zip", zip_code))
-            l.price = int(info.get("priceInfo", {}).get("amount", 0) or 0)
-            l.beds = float(info.get("beds", 0) or 0)
-            l.baths = float(info.get("baths", 0) or 0)
-            l.sqft = info.get("sqFt", {}).get("value") if isinstance(info.get("sqFt"), dict) else info.get("sqFt")
+            # Address fields — all nested under value/level dicts
+            l.address = (h.get("streetLine") or {}).get("value", "")
+            l.city = h.get("city", "Irvine")
+            l.state = h.get("state", "CA")
+            l.zip_code = str(h.get("zip") or zip_code)
+
+            l.price = int((h.get("price") or {}).get("value", 0) or 0)
+            l.beds = float(h.get("beds", 0) or 0)
+            l.baths = float(h.get("baths", 0) or 0)
+
+            sqft_block = h.get("sqFt") or {}
+            l.sqft = sqft_block.get("value") if isinstance(sqft_block, dict) else None
+
+            lot_block = h.get("lotSize") or {}
+            l.lot_sqft = lot_block.get("value") if isinstance(lot_block, dict) else None
+
+            year_block = h.get("yearBuilt") or {}
+            l.year_built = year_block.get("value") if isinstance(year_block, dict) else None
+
+            dom_block = h.get("dom") or {}
+            l.days_on_market = dom_block.get("value") if isinstance(dom_block, dict) else None
+
             l.property_type = "sfr"
-            l.source_id = str(info.get("mlsId", {}).get("value", "") or info.get("listingId", ""))
 
-            url_path = info.get("url", "")
+            url_path = h.get("url", "")
             l.listing_url = f"https://www.redfin.com{url_path}" if url_path else ""
 
-            # Garage: in amenitiesInfo or description
-            amenities = str(info.get("amenitiesInfo", {}))
-            desc = info.get("remarksInfo", {}).get("remarksAccessor", "")
-            l.has_garage, l.garage_spaces = self.detect_garage(amenities + " " + desc)
+            mls_block = h.get("mlsId") or {}
+            l.source_id = str(mls_block.get("value", "") or h.get("listingId", ""))
 
-            # Agent
-            agent = info.get("listingAgent", {})
-            l.agent_name = agent.get("agentName")
-            l.agent_phone = self.clean_phone(agent.get("agentPhone"))
+            # Agent info
+            agent = h.get("listingAgent") or {}
+            l.agent_name = agent.get("name")
+            l.agent_phone = self.clean_phone(agent.get("phone") or agent.get("agentPhone"))
+            l.brokerage = agent.get("officeName")
+
+            # Garage: Redfin doesn't expose in search results — mark unknown
+            l.has_garage = False
+            l.garage_spaces = None
 
             l.fingerprint = self.fingerprint_listing(l.address, l.price)
             return l if l.address and l.price > 0 else None
