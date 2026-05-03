@@ -1,12 +1,6 @@
 const $ = (sel) => document.querySelector(sel);
 const fmtPrice = (p) => "$" + p.toLocaleString();
-const fmtSpecs = (l) => {
-  const parts = [];
-  if (l.beds != null) parts.push(`${l.beds}bd`);
-  if (l.baths != null) parts.push(`${l.baths}ba`);
-  if (l.sqft) parts.push(`${l.sqft.toLocaleString()} sqft`);
-  return parts.join(" · ");
-};
+const fmtSqft = (n) => n ? n.toLocaleString() + " sq ft" : null;
 
 let activeTab = "approved";
 let filters = {};
@@ -25,11 +19,30 @@ function toast(msg, kind = "") {
   setTimeout(() => t.classList.remove("show"), 3500);
 }
 
-function escapeHtml(s) {
+function esc(s) {
   if (s == null) return "";
-  return String(s).replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  }[c]));
+  return String(s).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+function parseYield(l) {
+  // Try to parse rent_to_price_pct from notes JSON block
+  try {
+    const m = (l.notes || "").match(/\{.*\}/);
+    if (m) {
+      const meta = JSON.parse(m[0]);
+      return { pct: meta.rent_to_price_pct, passes: meta.passes_1pct_rule, rent: meta.market_rent_est };
+    }
+  } catch (_) {}
+  return null;
+}
+
+function yieldTag(y) {
+  if (!y || !y.pct) return "";
+  const pct = (y.pct * 100).toFixed(2);
+  const rent = y.rent ? ` · $${y.rent.toLocaleString()}/mo est.` : "";
+  if (y.passes) return `<div class="yield-tag good">✓ ${pct}% yield${rent}</div>`;
+  if (y.pct >= 0.007) return `<div class="yield-tag ok">${pct}% yield${rent}</div>`;
+  return `<div class="yield-tag low">${pct}% yield${rent}</div>`;
 }
 
 function card(l) {
@@ -37,75 +50,96 @@ function card(l) {
   el.className = "card" + (l.pinned_at ? " pinned" : "") + (l.status === "pending" ? " pending" : "");
   el.dataset.id = l.id;
 
-  const agent = [];
-  if (l.agent_name) agent.push(`<div class="name">${escapeHtml(l.agent_name)}</div>`);
-  if (l.agent_phone) {
-    const tel = l.agent_phone.replace(/[^0-9+]/g, "");
-    agent.push(`<div>📞 <a href="tel:${tel}">${escapeHtml(l.agent_phone)}</a></div>`);
-  }
-  if (l.agent_email) agent.push(`<div>✉️ <a href="mailto:${escapeHtml(l.agent_email)}">${escapeHtml(l.agent_email)}</a></div>`);
-  if (!agent.length) agent.push(`<div class="muted">No agent info</div>`);
+  const src = (l.source || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const y = parseYield(l);
 
-  const actions = l.status === "pending"
-    ? `<div class="actions">
-         <button class="approve">✓ Approve</button>
-         <button class="reject ghost">✕ Reject</button>
-       </div>`
-    : `<button class="pin ${l.pinned_at ? "pinned" : ""}">${l.pinned_at ? "📌 Pinned" : "Pin"}</button>`;
+  // Specs row
+  const specs = [];
+  if (l.beds != null) specs.push(`<span>${l.beds} bd</span>`);
+  if (l.baths != null) specs.push(`<span class="spec-sep">·</span><span>${l.baths} ba</span>`);
+  if (l.sqft) specs.push(`<span class="spec-sep">·</span><span>${fmtSqft(l.sqft)}</span>`);
+
+  // Agent
+  let agentHtml = "";
+  if (l.agent_name || l.agent_phone || l.agent_email) {
+    agentHtml = `<div class="card-agent">`;
+    if (l.agent_name) agentHtml += `<div class="agent-name">${esc(l.agent_name)}</div>`;
+    if (l.agent_phone) {
+      const tel = l.agent_phone.replace(/[^0-9+]/g, "");
+      agentHtml += `<div><a href="tel:${tel}">${esc(l.agent_phone)}</a></div>`;
+    }
+    if (l.agent_email) agentHtml += `<div><a href="mailto:${esc(l.agent_email)}">${esc(l.agent_email)}</a></div>`;
+    agentHtml += `</div>`;
+  }
+
+  // Footer actions
+  let footerHtml = `<div class="card-footer">`;
+  if (l.listing_url) {
+    footerHtml += `<button class="btn-view" onclick="window.open('${esc(l.listing_url)}','_blank')">View ↗</button>`;
+  }
+  if (l.status === "pending") {
+    footerHtml += `<button class="btn-approve">✓ Approve</button><button class="btn-reject">✕</button>`;
+  }
+  footerHtml += `</div>`;
+
+  // Badges in photo
+  let badgesHtml = `<div class="photo-badges"><span class="badge badge-source">${esc(l.source || "unknown")}</span>`;
+  if (l.pinned_at) badgesHtml += `<span class="badge badge-pinned">📌 Pinned</span>`;
+  if (l.status === "pending") badgesHtml += `<span class="badge badge-pending">Review</span>`;
+  if (y && y.passes) badgesHtml += `<span class="badge badge-1pct">1% Rule</span>`;
+  badgesHtml += `</div>`;
 
   el.innerHTML = `
-    <span class="source-tag">${escapeHtml(l.source.replace("_", " "))}</span>
-    <div class="price">${fmtPrice(l.price)}</div>
-    <div class="addr">${escapeHtml(l.address)}, ${escapeHtml(l.city)} ${escapeHtml(l.state)} ${escapeHtml(l.zip)}</div>
-    <div class="specs">${fmtSpecs(l) || "—"}</div>
-    <div class="agent">${agent.join("")}</div>
-    ${actions}
-    <a class="muted small" style="margin-top:8px;" href="${escapeHtml(l.listing_url || "#")}" target="_blank" rel="noopener">View listing →</a>
+    <div class="card-photo" data-source="${src}">
+      <div class="placeholder">🏠</div>
+      ${badgesHtml}
+      ${l.status === "approved" ? `<button class="pin-btn ${l.pinned_at ? "pinned" : ""}" title="${l.pinned_at ? "Unpin" : "Pin this listing"}">${l.pinned_at ? "📌" : "🤍"}</button>` : ""}
+    </div>
+    <div class="card-body">
+      <div class="card-price">${fmtPrice(l.price)}</div>
+      <div class="card-specs">${specs.join("")}</div>
+      <div class="card-address">${esc(l.address)}</div>
+      <div class="card-city">${esc(l.city || "Irvine")}, ${esc(l.state || "CA")} ${esc(l.zip || "")}</div>
+      ${yieldTag(y)}
+      ${agentHtml}
+      ${footerHtml}
+    </div>
   `;
-  const pinBtn = el.querySelector("button.pin");
-  if (pinBtn) pinBtn.addEventListener("click", () => togglePin(l));
-  const approveBtn = el.querySelector("button.approve");
-  if (approveBtn) approveBtn.addEventListener("click", () => approve(l));
-  const rejectBtn = el.querySelector("button.reject");
-  if (rejectBtn) rejectBtn.addEventListener("click", () => reject(l));
+
+  el.querySelector(".pin-btn")?.addEventListener("click", () => togglePin(l));
+  el.querySelector(".btn-approve")?.addEventListener("click", () => approve(l));
+  el.querySelector(".btn-reject")?.addEventListener("click", () => reject(l));
   return el;
 }
 
 async function togglePin(l) {
-  const action = l.pinned_at ? "unpin" : "pin";
   try {
-    if (action === "pin") {
-      const res = await api(`/api/listings/${l.id}/pin`, { method: "POST" });
-      toast(res.telegram_sent ? "📌 Pinned & sent to Telegram" : "Pinned (Telegram not linked — /start the bot)", res.telegram_sent ? "success" : "");
-    } else {
+    if (l.pinned_at) {
       await api(`/api/listings/${l.id}/pin`, { method: "DELETE" });
       toast("Unpinned");
+    } else {
+      const res = await api(`/api/listings/${l.id}/pin`, { method: "POST" });
+      toast(res.telegram_sent ? "📌 Pinned & sent to Telegram!" : "📌 Pinned (set up Telegram to get notified)", res.telegram_sent ? "success" : "");
     }
     await refresh();
-  } catch (e) {
-    toast("Failed: " + e.message, "error");
-  }
+  } catch (e) { toast("Failed: " + e.message, "error"); }
 }
 
 async function approve(l) {
   try {
     await api(`/api/listings/${l.id}/approve`, { method: "POST" });
-    toast(`✓ Approved ${l.address}`, "success");
+    toast(`Approved — moved to For Sale`, "success");
     await refresh();
-  } catch (e) {
-    toast("Approve failed: " + e.message, "error");
-  }
+  } catch (e) { toast("Failed: " + e.message, "error"); }
 }
 
 async function reject(l) {
-  if (!confirm(`Reject (delete) ${l.address}?`)) return;
+  if (!confirm(`Delete listing at ${l.address}?`)) return;
   try {
     await api(`/api/listings/${l.id}`, { method: "DELETE" });
-    toast(`Rejected ${l.address}`);
+    toast(`Removed ${l.address}`);
     await refresh();
-  } catch (e) {
-    toast("Reject failed: " + e.message, "error");
-  }
+  } catch (e) { toast("Failed: " + e.message, "error"); }
 }
 
 function buildQuery(f, status) {
@@ -128,22 +162,26 @@ async function refresh() {
   $("#tab-count-approved").textContent = `(${approved.length})`;
   $("#tab-count-pending").textContent = `(${pending.length})`;
 
-  const tray = $("#tray");
-  tray.innerHTML = "";
+  // Tray
+  const trayEl = $("#tray");
+  const traySection = $("#tray-section");
+  trayEl.innerHTML = "";
   if (!pinned.length) {
-    tray.innerHTML = `<div class="empty">No pinned listings yet — click Pin on any card below.</div>`;
+    traySection.style.display = "none";
   } else {
-    pinned.forEach((l) => tray.appendChild(card(l)));
+    traySection.style.display = "";
+    pinned.forEach((l) => trayEl.appendChild(card(l)));
+    $("#tray-count").textContent = pinned.length;
   }
-  $("#tray-count").textContent = `(${pinned.length}${pinned.length > 5 ? ", top 5 in Telegram" : ""})`;
 
-  const list = $("#list");
-  list.innerHTML = "";
+  // Main list
+  const listEl = $("#list");
+  listEl.innerHTML = "";
   const rows = activeTab === "approved" ? approved : pending;
   if (!rows.length) {
-    list.innerHTML = `<div class="empty">${activeTab === "pending" ? "No listings awaiting review." : "No listings match your filters."}</div>`;
+    listEl.innerHTML = `<div class="empty"><div class="empty-icon">${activeTab === "pending" ? "🎉" : "🔍"}</div><p>${activeTab === "pending" ? "No listings awaiting review." : "No listings match your filters.<br>Try clicking <strong>Find More Listings</strong>."}</p></div>`;
   } else {
-    rows.forEach((l) => list.appendChild(card(l)));
+    rows.forEach((l) => listEl.appendChild(card(l)));
   }
 }
 
@@ -158,7 +196,7 @@ function applyFilters() {
 }
 
 function clearFilters() {
-  ["#f-zip", "#f-min", "#f-max", "#f-beds"].forEach((s) => ($(s).value = ""));
+  ["#f-zip","#f-min","#f-max","#f-beds"].forEach((s) => ($(s).value = ""));
   filters = {};
   refresh();
 }
@@ -166,31 +204,27 @@ function clearFilters() {
 async function checkHealth() {
   try {
     await api("/api/health");
-    $("#status").textContent = "● connected";
-    $("#status").style.color = "var(--good)";
+    $("#status").textContent = "● Live";
+    $("#status").style.color = "#00857d";
   } catch {
-    $("#status").textContent = "● backend down";
-    $("#status").style.color = "var(--danger)";
+    $("#status").textContent = "● Offline";
+    $("#status").style.color = "#d92228";
   }
 }
 
-// ── Search agent ─────────────────────────────────────────────────────────
+// ── Search ────────────────────────────────────────────────────────────
 
 async function startSearch() {
   $("#search-panel").classList.remove("hidden");
   $("#search-state").textContent = "Starting…";
   $("#search-log").textContent = "";
   $("#search-btn").disabled = true;
-
   try {
-    await api("/api/search/run", {
-      method: "POST",
-      body: JSON.stringify({ target: 25 }),
-    });
+    await api("/api/search/run", { method: "POST", body: JSON.stringify({ target: 25 }) });
     pollSearch();
   } catch (e) {
     $("#search-state").textContent = "Failed to start";
-    toast("Search failed to start: " + e.message, "error");
+    toast("Could not start search: " + e.message, "error");
     $("#search-btn").disabled = false;
   }
 }
@@ -199,22 +233,21 @@ async function pollSearch() {
   if (searchPollHandle) clearTimeout(searchPollHandle);
   try {
     const s = await api("/api/search/status");
-    $("#search-state").textContent = s.running ? "🔍 Running…" : (s.returncode === 0 ? "✓ Done" : "⚠ Stopped");
-    $("#search-counts").textContent = `qualified=${s.qualified}  inserted=${s.inserted}  updated=${s.updated}`;
+    const done = !s.running;
+    $("#search-state").textContent = s.running ? "🔍 Scanning listings…" : (s.returncode === 0 ? "✓ Done" : "⚠ Stopped");
+    $("#search-counts").textContent = `${s.qualified} found · ${s.inserted} new · ${s.updated} updated`;
     $("#search-log").textContent = s.log_tail.slice(-30).join("\n");
-    if (s.running) {
+    if (!done) {
       searchPollHandle = setTimeout(pollSearch, 1500);
     } else {
       $("#search-btn").disabled = false;
       await refresh();
-      if (s.returncode === 0) {
-        toast(`Search complete — ${s.inserted} new in pending tab`, "success");
-        // auto-switch to pending tab if anything new
-        if (s.inserted > 0) switchTab("pending");
+      if (s.returncode === 0 && s.inserted > 0) {
+        toast(`Found ${s.inserted} new listings — check Pending Review`, "success");
+        switchTab("pending");
       }
     }
   } catch (e) {
-    $("#search-state").textContent = "Status error";
     $("#search-btn").disabled = false;
   }
 }
@@ -225,18 +258,15 @@ function switchTab(tab) {
   refresh();
 }
 
-// ── Wire events ──────────────────────────────────────────────────────────
+// ── Wire up ───────────────────────────────────────────────────────────
 
 $("#f-apply").addEventListener("click", applyFilters);
 $("#f-clear").addEventListener("click", clearFilters);
 $("#f-zip").addEventListener("keydown", (e) => e.key === "Enter" && applyFilters());
 $("#search-btn").addEventListener("click", startSearch);
 $("#search-close").addEventListener("click", () => $("#search-panel").classList.add("hidden"));
-document.querySelectorAll(".tab").forEach((b) => {
-  b.addEventListener("click", () => switchTab(b.dataset.tab));
-});
+document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => switchTab(b.dataset.tab)));
 
 checkHealth();
 refresh();
-// resume polling if a search was running before page reload
 api("/api/search/status").then((s) => { if (s.running) { $("#search-panel").classList.remove("hidden"); pollSearch(); } }).catch(() => {});

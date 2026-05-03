@@ -3,53 +3,69 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Homely</title>
+  <title>Homely — Irvine Deals</title>
   <link rel="icon" href="data:," />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
+
   <header>
-    <h1>🏠 Homely</h1>
-    <div class="header-right">
-      <button id="search-btn" class="primary">🔎 Find more listings</button>
-      <span id="status" class="status"></span>
+    <div class="header-inner">
+      <a class="logo" href="/">
+        <div class="logo-icon">🏠</div>
+        <span class="logo-text">Homely</span>
+      </a>
+      <div class="header-right">
+        <button id="search-btn" class="primary">Find More Listings</button>
+        <span id="status" class="status-dot"></span>
+      </div>
     </div>
   </header>
 
   <div id="search-panel" class="search-panel hidden">
     <div class="search-head">
       <strong id="search-state">Idle</strong>
-      <span id="search-counts" class="muted small"></span>
+      <span id="search-counts" class="counts"></span>
       <button id="search-close" class="ghost small">✕</button>
     </div>
     <pre id="search-log"></pre>
   </div>
 
-  <section class="tray">
-    <div class="tray-head">
-      <h2>📌 Top picks <span id="tray-count" class="muted">(0)</span></h2>
-      <p class="muted small">Pinned listings — top 5 most-recent are notified to Telegram.</p>
+  <div class="main">
+
+    <!-- Pinned tray -->
+    <section class="tray-section" id="tray-section">
+      <div class="section-title">
+        📌 Top Picks
+        <span id="tray-count" class="pill">0</span>
+      </div>
+      <div id="tray" class="grid"></div>
+    </section>
+
+    <!-- Filter bar -->
+    <div class="filter-bar">
+      <span class="filter-label">Filter</span>
+      <div class="filter-divider"></div>
+      <input id="f-zip"  type="text"   placeholder="ZIP code"  inputmode="numeric" maxlength="5" />
+      <input id="f-min"  type="number" placeholder="Min price" min="0" step="50000" />
+      <input id="f-max"  type="number" placeholder="Max price" min="0" step="50000" />
+      <input id="f-beds" type="number" placeholder="Min beds"  min="0" step="0.5" />
+      <div class="filter-actions">
+        <button id="f-apply" class="primary small">Apply</button>
+        <button id="f-clear" class="ghost small">Clear</button>
+      </div>
     </div>
-    <div id="tray" class="grid"></div>
-  </section>
 
-  <nav class="tabs">
-    <button class="tab active" data-tab="approved">Approved <span id="tab-count-approved" class="muted">(0)</span></button>
-    <button class="tab" data-tab="pending">Pending review <span id="tab-count-pending" class="muted">(0)</span></button>
-  </nav>
+    <!-- Tabs -->
+    <div class="tabs-bar">
+      <button class="tab active" data-tab="approved">For Sale <span id="tab-count-approved" class="count">(0)</span></button>
+      <button class="tab" data-tab="pending">Pending Review <span id="tab-count-pending" class="count">(0)</span></button>
+    </div>
 
-  <section class="filters">
-    <input id="f-zip" type="text" placeholder="ZIP" inputmode="numeric" maxlength="5" />
-    <input id="f-min" type="number" placeholder="Min $" min="0" step="50000" />
-    <input id="f-max" type="number" placeholder="Max $" min="0" step="50000" />
-    <input id="f-beds" type="number" placeholder="Min beds" min="0" step="0.5" />
-    <button id="f-apply">Apply</button>
-    <button id="f-clear" class="ghost">Clear</button>
-  </section>
-
-  <section>
+    <!-- Listing grid -->
     <div id="list" class="grid"></div>
-  </section>
+
+  </div>
 
   <div id="toast" class="toast"></div>
   <script type="module" src="/app.js"></script>
