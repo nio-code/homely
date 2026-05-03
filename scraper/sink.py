@@ -14,7 +14,7 @@ from .models import Listing
 
 log = logging.getLogger("homely.sink")
 
-DEFAULT_API_URL = "http://localhost:8000/api/listings/ingest"
+DEFAULT_API_URL = os.getenv("INGEST_URL", "http://localhost:8000/api/listings/ingest")
 DEFAULT_API_KEY = os.getenv("INGEST_API_KEY", "key1")
 BATCH_SIZE = 500  # spec allows up to 500 per call
 
